@@ -28,7 +28,7 @@
 #define NVME
 #include "nvmeswap.h"
 #else
-#error "BACKEND can only be 1 (DRAM) or 2 (RDMA)"
+#error "BACKEND can only be 1 (DRAM) or 2 (RDMA) or 3(NVME)"
 #endif
 
 static int sswap_store(unsigned type, pgoff_t pageid,

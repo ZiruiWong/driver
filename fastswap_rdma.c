@@ -759,7 +759,6 @@ int sswap_rdma_read_sync(struct page *page, u64 roffset)
 {
   struct rdma_queue *q;
   int ret;
-
   VM_BUG_ON_PAGE(!PageSwapCache(page), page);
   VM_BUG_ON_PAGE(!PageLocked(page), page);
   VM_BUG_ON_PAGE(PageUptodate(page), page);

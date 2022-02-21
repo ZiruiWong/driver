@@ -20,6 +20,30 @@
 #include <asm/pgtable.h>
 */
 
+void end_swap_bio_write(struct bio *bio)
+{
+	struct page *page = bio_first_page_all(bio);
+
+	if (bio->bi_status) {
+		SetPageError(page);
+		/*
+		 * We failed to write the page out to swap-space.
+		 * Re-dirty the page in order to avoid it being reclaimed.
+		 * Also print a dire warning that things will go BAD (tm)
+		 * very quickly.
+		 *
+		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
+		 */
+		set_page_dirty(page);
+		pr_alert("Write-error on swap-device (%u:%u:%llu)\n",
+			 MAJOR(bio_dev(bio)), MINOR(bio_dev(bio)),
+			 (unsigned long long)bio->bi_iter.bi_sector);
+		ClearPageReclaim(page);
+	}
+	end_page_writeback(page);
+	bio_put(bio);
+}
+
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
 {
@@ -145,6 +169,14 @@ static inline int nvme_swap_get_req()
     
 }
 
+/**
+ * @brief 
+ * 		function for swap out, with interrupt respond
+ * @param page 
+ * @param roffset 
+ * @return int 
+ */
+
 int sswap_rdma_write(struct page *page, u64 roffset)
 {
 	struct writeback_control wbc = {
@@ -155,8 +187,29 @@ int sswap_rdma_write(struct page *page, u64 roffset)
 		.for_reclaim = 1,
 	};
 
+	struct bio *bio;
+	int ret;
+	struct swap_info_struct *sis = page_swap_info(page);
 
-	
+	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
+
+	ret = 0;
+	bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
+	if (bio == NULL) {
+		set_page_dirty(page);
+		unlock_page(page);
+		ret = -ENOMEM;
+		goto out;
+	}
+	bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(wbc);
+	bio_associate_blkg_from_page(bio, page);
+	count_swpout_vm_event(page);
+	set_page_writeback(page);
+	unlock_page(page);
+	submit_bio(bio);
+out:
+	return ret;
+
 }
 EXPORT_SYMBOL(sswap_rdma_write);
 
