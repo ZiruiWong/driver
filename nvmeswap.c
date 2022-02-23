@@ -2,8 +2,6 @@
 
 #include "nvmeswap.h"
 
-/*========buffer============*/
-/*
 #include <linux/gfp.h>
 #include <linux/bio.h>
 #include <linux/swap.h>
@@ -18,204 +16,51 @@
 #include <linux/uio.h>
 #include <linux/sched/task.h>
 #include <asm/pgtable.h>
-*/
+#include <linux/swapfile.h>
+#include <linux/swap_slots.h>
+#include <linux/swapops.h>
+#include <linux/swap_cgroup.h>
 
-void end_swap_bio_write(struct bio *bio)
-{
-	struct page *page = bio_first_page_all(bio);
-
-	if (bio->bi_status) {
-		SetPageError(page);
-		/*
-		 * We failed to write the page out to swap-space.
-		 * Re-dirty the page in order to avoid it being reclaimed.
-		 * Also print a dire warning that things will go BAD (tm)
-		 * very quickly.
-		 *
-		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
-		 */
-		set_page_dirty(page);
-		pr_alert("Write-error on swap-device (%u:%u:%llu)\n",
-			 MAJOR(bio_dev(bio)), MINOR(bio_dev(bio)),
-			 (unsigned long long)bio->bi_iter.bi_sector);
-		ClearPageReclaim(page);
-	}
-	end_page_writeback(page);
-	bio_put(bio);
-}
-
-static struct bio *get_swap_bio(gfp_t gfp_flags,
-				struct page *page, bio_end_io_t end_io)
-{
-	struct bio *bio;
-
-	bio = bio_alloc(gfp_flags, 1);
-	if (bio) {
-		struct block_device *bdev;
-
-		bio->bi_iter.bi_sector = map_swap_page(page, &bdev);
-		bio_set_dev(bio, bdev);
-		bio->bi_iter.bi_sector <<= PAGE_SHIFT - 9;
-		bio->bi_end_io = end_io;
-
-		bio_add_page(bio, page, PAGE_SIZE * hpage_nr_pages(page), 0);
-	}
-	return bio;
-}
-
-static struct void end_swap_bio_write(struct bio *bio)
-{
-	struct page *page = bio_first_page_all(bio);
-
-	if (bio->bi_status) {
-		SetPageError(page);
-		/*
-		 * We failed to write the page out to swap-space.
-		 * Re-dirty the page in order to avoid it being reclaimed.
-		 * Also print a dire warning that things will go BAD (tm)
-		 * very quickly.
-		 *
-		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
-		 */
-		set_page_dirty(page);
-		pr_alert("Write-error on swap-device (%u:%u:%llu)\n",
-			 MAJOR(bio_dev(bio)), MINOR(bio_dev(bio)),
-			 (unsigned long long)bio->bi_iter.bi_sector);
-		ClearPageReclaim(page);
-	}
-	end_page_writeback(page);
-	bio_put(bio);
-}
-
-static void swap_slot_free_notify(struct page *page)
-{
-	struct swap_info_struct *sis;
-	struct gendisk *disk;
-	swp_entry_t entry;
-
-	/*
-	 * There is no guarantee that the page is in swap cache - the software
-	 * suspend code (at least) uses end_swap_bio_read() against a non-
-	 * swapcache page.  So we must check PG_swapcache before proceeding with
-	 * this optimization.
-	 */
-	if (unlikely(!PageSwapCache(page)))
-		return;
-
-	sis = page_swap_info(page);
-	if (!(sis->flags & SWP_BLKDEV))
-		return;
-
-	/*
-	 * The swap subsystem performs lazy swap slot freeing,
-	 * expecting that the page will be swapped out again.
-	 * So we can avoid an unnecessary write if the page
-	 * isn't redirtied.
-	 * This is good for real swap storage because we can
-	 * reduce unnecessary I/O and enhance wear-leveling
-	 * if an SSD is used as the as swap device.
-	 * But if in-memory swap device (eg zram) is used,
-	 * this causes a duplicated copy between uncompressed
-	 * data in VM-owned memory and compressed data in
-	 * zram-owned memory.  So let's free zram-owned memory
-	 * and make the VM-owned decompressed page *dirty*,
-	 * so the page should be swapped out somewhere again if
-	 * we again wish to reclaim it.
-	 */
-	disk = sis->bdev->bd_disk;
-	entry.val = page_private(page);
-	if (disk->fops->swap_slot_free_notify && __swap_count(entry) == 1) {
-		unsigned long offset;
-
-		offset = swp_offset(entry);
-
-		SetPageDirty(page);
-		disk->fops->swap_slot_free_notify(sis->bdev,
-				offset);
-	}
-}
-
-static void end_swap_bio_read(struct bio *bio)
-{
-	struct page *page = bio_first_page_all(bio);
-	struct task_struct *waiter = bio->bi_private;
-
-	if (bio->bi_status) {
-		SetPageError(page);
-		ClearPageUptodate(page);
-		pr_alert("Read-error on swap-device (%u:%u:%llu)\n",
-			 MAJOR(bio_dev(bio)), MINOR(bio_dev(bio)),
-			 (unsigned long long)bio->bi_iter.bi_sector);
-		goto out;
-	}
-
-	SetPageUptodate(page);
-	swap_slot_free_notify(page);
-out:
-	unlock_page(page);
-	WRITE_ONCE(bio->bi_private, NULL);
-	bio_put(bio);
-	if (waiter) {
-		blk_wake_io_task(waiter);
-		put_task_struct(waiter);
-	}
-}
-
-
-/*========buffer============*/
-
-static inline int nvme_swap_get_req()
-{
-    
-}
-
-/**
- * @brief 
- * 		function for swap out, with interrupt respond
- * @param page 
- * @param roffset 
- * @return int 
- */
-
+/*******************************************************/
 int sswap_rdma_write(struct page *page, u64 roffset)
 {
-	struct writeback_control wbc = {
-		.sync_mode = WB_SYNC_NONE,
-		.nr_to_write = SWAP_CLUSTER_MAX,
-		.range_start = 0,
-		.range_end = LLONG_MAX,
-		.for_reclaim = 1,
-	};
+    struct writeback_control wbc = {
+        .sync_mode = WB_SYNC_NONE,
+        .nr_to_write = SWAP_CLUSTER_MAX,
+        .range_start = 0,
+        .range_end = LLONG_MAX,
+        .for_reclaim = 1,
+    };
 
-	struct bio *bio;
-	int ret;
-	struct swap_info_struct *sis = page_swap_info(page);
+    struct bio *bio;
+    int ret;
 
-	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
+    VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
-	ret = 0;
-	bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
-	if (bio == NULL) {
-		set_page_dirty(page);
-		unlock_page(page);
-		ret = -ENOMEM;
-		goto out;
-	}
-	bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(wbc);
-	bio_associate_blkg_from_page(bio, page);
-	count_swpout_vm_event(page);
-	set_page_writeback(page);
-	unlock_page(page);
-	submit_bio(bio);
+    ret = 0;
+    bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
+    if (bio == NULL) {
+        set_page_dirty(page);
+        unlock_page(page);
+        ret = -ENOMEM;
+        //goto out;
+        return ret;
+    }
+    bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);
+    bio_associate_blkg_from_page(bio, page);
+    count_swpout_vm_event(page);
+    set_page_writeback(page);
+    unlock_page(page);
+    submit_bio(bio);
 out:
-	return ret;
+    return ret;
 
 }
 EXPORT_SYMBOL(sswap_rdma_write);
 
 int sswap_rdma_poll_load(int cpu)
 {
-	//TODO
+    //TODO
     
     return 0;
 }
@@ -226,51 +71,63 @@ int sswap_rdma_read_async(struct page *page, u64 roffset)
     struct bio *bio;
     int ret = 0;
     blk_qc_t qc;
+    struct gendisk *disk;
 
-	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
-	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	VM_BUG_ON_PAGE(PageUptodate(page), page);
+    VM_BUG_ON_PAGE(!PageSwapCache(page), page);
+    VM_BUG_ON_PAGE(!PageLocked(page), page);
+    VM_BUG_ON_PAGE(PageUptodate(page), page);
 
-	//TODO
-	bio = get_swap_bio(GFP_KERNEL, page, end_swap_bio_read);
-	if (bio == NULL) {
-		unlock_page(page);
-		ret = -ENOMEM;
-		goto out;
-	}
-	disk = bio->bi_disk;
-	/*
-	 * Keep this task valid during swap readpage because the oom killer may
-	 * attempt to access it in the page fault retry time check.
-	 */
-	bio_set_op_attrs(bio, REQ_OP_READ, 0);
+    //TODO
+    bio = get_swap_bio(GFP_KERNEL, page, end_swap_bio_read);
+    if (bio == NULL) {
+        unlock_page(page);
+        ret = -ENOMEM;
+        goto out;
+    }
+    disk = bio->bi_disk;
+    /*
+     * Keep this task valid during swap readpage because the oom killer may
+     * attempt to access it in the page fault retry time check.
+     */
+    bio_set_op_attrs(bio, REQ_OP_READ, 0);
+    /*if (synchronous) {
+        bio->bi_opf |= REQ_HIPRI;
+        get_task_struct(current);
+        bio->bi_private = current;
+    }*/
+    count_vm_event(PSWPIN);
+    bio_get(bio);
+    qc = submit_bio(bio);
+    /*while (synchronous) {
+        set_current_state(TASK_UNINTERRUPTIBLE);
+        if (!READ_ONCE(bio->bi_private))
+            break;
 
-	count_vm_event(PSWPIN);
-	bio_get(bio);
-	qc = submit_bio(bio);
-	__set_current_state(TASK_RUNNING);
-	bio_put(bio);
+        if (!blk_poll(disk->queue, qc, true))
+            io_schedule();
+    }*/
+    __set_current_state(TASK_RUNNING);
+    bio_put(bio);
 
-	SetPageUptodate(page);
-	unlock_page(page);
-	return 0;
+out:
+    return ret;
 }
 EXPORT_SYMBOL(sswap_rdma_read_async);
 
 int sswap_rdma_read_sync(struct page *page, u64 roffset)
 {
-	return sswap_rdma_read_async(page, roffset);
+    return sswap_rdma_read_async(page, roffset);
 }
 EXPORT_SYMBOL(sswap_rdma_read_sync);
 
 static void __exit sswap_dram_cleanup_module(void)
 {
-	return;
+    return;
 }
 
 static int __init sswap_dram_init_module(void)
 {
-	return 0;
+    return 0;
 }
 
 module_init(sswap_dram_init_module);

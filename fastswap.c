@@ -89,9 +89,9 @@ static void sswap_init(unsigned type)
 static struct frontswap_ops sswap_frontswap_ops = {
   .init = sswap_init,
   .store = sswap_store,
-  .load = sswap_load,
-  .poll_load = sswap_poll_load,
-  .load_async = sswap_load_async,
+  .load = sswap_load_async,
+//  .poll_load = sswap_poll_load,
+//  .load_async = sswap_load_async,
   .invalidate_page = sswap_invalidate_page,
   .invalidate_area = sswap_invalidate_area,
 

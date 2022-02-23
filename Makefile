@@ -29,7 +29,7 @@ ifeq ($(BACKEND),RDMA)
 else ifeq ($(BACKEND),DRAM)
 	obj-m += fastswap_dram.o
 	CFLAGS_fastswap.o=-DBACKEND=1
-else ifeq ($(BACKEND),NVME)
+else
 	obj-m += nvmeswap.o
 	CFLAGS_fastswap.o=-DBACKEND=3
 endif
