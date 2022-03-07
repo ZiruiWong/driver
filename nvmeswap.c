@@ -37,7 +37,7 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     struct block_device *bdev;
     //struct swap_info_struct *sis = page_swap_info(page);
     unsigned int count;
-    
+
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
     /* get swap bio */
