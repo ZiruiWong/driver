@@ -52,7 +52,7 @@ int sswap_rdma_write(struct page *page, u64 roffset)
 		set_page_dirty(page);
 		unlock_page(page);
 		ret = -ENOMEM;
-		return 0;
+		return ret;
 	}
     /*
     bio = bio_alloc(GFP_NOIO, 1);
