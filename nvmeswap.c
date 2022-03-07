@@ -34,19 +34,19 @@ int sswap_rdma_write(struct page *page, u64 roffset)
 
     struct bio *bio;
     int ret;
+    struct block_device *bdev;
+    unsigned int count;
+    
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
-
     ret = 0;
 
     /* get swap bio */
     bio = bio_alloc(GFP_NOIO, 1);
-
-    struct block_device *bdev;
 	bio->bi_iter.bi_sector = map_swap_page(page, &bdev);
 	bio_set_dev(bio, bdev);                                             //set bio->bi_disk, bio->bi_partno
-
+    bio->bi_iter.bi_sector <<= PAGE_SHIFT - 9;
     bio->bi_end_io = end_swap_bio_write;
-    bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);
+    bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);   //REQ_OP_WRITE, REQ_SWAP
     bio_add_page(bio, page, PAGE_SIZE * hpage_nr_pages(page), 0);       //TODO: add
     
     bio_associate_blkg_from_page(bio, page);
@@ -55,18 +55,19 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     unlock_page(page);
     
     submit_bio(bio);
-   /* unsigned int count;
-    count = bio_sectors(bio);
-    count_vm_events(PGPGOUT, count);
 
-    if (unlikely(block_dump)) {                                         //TODO: block_dump?
-        char b[BDEVNAME_SIZE];
-        printk(KERN_DEBUG "%s(%d): %s block %Lu on %s (%u sectors)\n",
-        current->comm, task_pid_nr(current),
-            op_is_write(bio_op(bio)) ? "WRITE" : "READ",
-            (unsigned long long)bio->bi_iter.bi_sector,
-            bio_devname(bio, b), count);
-    }
+    //count = bio_sectors(bio);
+    //count_vm_events(PGPGOUT, count);
+
+    /* print debug msg */
+    /*
+    char b[BDEVNAME_SIZE];
+    printk(KERN_DEBUG "%s(%d): %s block %Lu on %s (%u sectors)\n",
+    current->comm, task_pid_nr(current),
+        op_is_write(bio_op(bio)) ? "WRITE" : "READ",
+        (unsigned long long)bio->bi_iter.bi_sector,
+        bio_devname(bio, b), count);
+
     generic_make_request(bio);*/
     /*
     BUG_ON(bio->bi_next);
