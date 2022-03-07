@@ -34,19 +34,25 @@ int sswap_rdma_write(struct page *page, u64 roffset)
 
     struct bio *bio;
     int ret;
-
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
     ret = 0;
+    /*
     bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
     if (bio == NULL) {
         set_page_dirty(page);
         unlock_page(page);
         ret = -ENOMEM;
-        //goto out;
         return ret;
     }
+    */
+    bio = bio_alloc(GFP_NOIO, 1);
+
+
+    bio->bi_end_io = end_swap_bio_write;
     bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);
+    bio_add_page(bio, page, PAGE_SIZE * hpage_nr_pages(page), 0);       //TODO: add
+    
     bio_associate_blkg_from_page(bio, page);
     count_swpout_vm_event(page);
     set_page_writeback(page);
