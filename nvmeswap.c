@@ -37,17 +37,13 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
     ret = 0;
-    /*
-    bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
-    if (bio == NULL) {
-        set_page_dirty(page);
-        unlock_page(page);
-        ret = -ENOMEM;
-        return ret;
-    }
-    */
+
+    /* get swap bio */
     bio = bio_alloc(GFP_NOIO, 1);
 
+    struct block_device *bdev;
+	bio->bi_iter.bi_sector = map_swap_page(page, &bdev);
+	bio_set_dev(bio, bdev);                                             //set bio->bi_disk, bio->bi_partno
 
     bio->bi_end_io = end_swap_bio_write;
     bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);
@@ -57,8 +53,55 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     count_swpout_vm_event(page);
     set_page_writeback(page);
     unlock_page(page);
+    
     submit_bio(bio);
-out:
+   /* unsigned int count;
+    count = bio_sectors(bio);
+    count_vm_events(PGPGOUT, count);
+
+    if (unlikely(block_dump)) {                                         //TODO: block_dump?
+        char b[BDEVNAME_SIZE];
+        printk(KERN_DEBUG "%s(%d): %s block %Lu on %s (%u sectors)\n",
+        current->comm, task_pid_nr(current),
+            op_is_write(bio_op(bio)) ? "WRITE" : "READ",
+            (unsigned long long)bio->bi_iter.bi_sector,
+            bio_devname(bio, b), count);
+    }
+    generic_make_request(bio);*/
+    /*
+    BUG_ON(bio->bi_next);
+	bio_list_init(&bio_list_on_stack[0]);
+	current->bio_list = bio_list_on_stack;
+	do {
+		struct request_queue *q = bio->bi_disk->queue;
+		blk_mq_req_flags_t flags = bio->bi_opf & REQ_NOWAIT ?
+			BLK_MQ_REQ_NOWAIT : 0;
+
+        struct bio_list lower, same;
+
+        bio_list_on_stack[1] = bio_list_on_stack[0];
+        bio_list_init(&bio_list_on_stack[0]);
+        ret = q->make_request_fn(q, bio);
+
+        blk_queue_exit(q);
+
+        bio_list_init(&lower);
+        bio_list_init(&same);
+        while ((bio = bio_list_pop(&bio_list_on_stack[0])) != NULL)
+            if (q == bio->bi_disk->queue)
+                bio_list_add(&same, bio);
+            else
+                bio_list_add(&lower, bio);
+
+        bio_list_merge(&bio_list_on_stack[0], &lower);
+        bio_list_merge(&bio_list_on_stack[0], &same);
+        bio_list_merge(&bio_list_on_stack[0], &bio_list_on_stack[1]);
+
+		bio = bio_list_pop(&bio_list_on_stack[0]);
+	} while (bio);
+	current->bio_list = NULL;
+    */
+
     return ret;
 
 }
@@ -122,6 +165,7 @@ EXPORT_SYMBOL(sswap_rdma_read_async);
 
 int sswap_rdma_read_sync(struct page *page, u64 roffset)
 {
+    //TODO
     return sswap_rdma_read_async(page, roffset);
 }
 EXPORT_SYMBOL(sswap_rdma_read_sync);
