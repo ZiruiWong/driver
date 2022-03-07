@@ -33,22 +33,36 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     };
 
     struct bio *bio;
-    int ret;
+    int ret = 0;
     struct block_device *bdev;
+    //struct swap_info_struct *sis = page_swap_info(page);
     unsigned int count;
     
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
-    ret = 0;
 
     /* get swap bio */
-    bio = bio_alloc(GFP_NOIO, 1);
+    /*bio = bio_alloc(GFP_NOIO, 1);
 	bio->bi_iter.bi_sector = map_swap_page(page, &bdev);
 	bio_set_dev(bio, bdev);                                             //set bio->bi_disk, bio->bi_partno
     bio->bi_iter.bi_sector <<= PAGE_SHIFT - 9;
     bio->bi_end_io = end_swap_bio_write;
-    bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);   //REQ_OP_WRITE, REQ_SWAP
-    bio_add_page(bio, page, PAGE_SIZE * hpage_nr_pages(page), 0);       //TODO: add
+    bio_add_page(bio, page, PAGE_SIZE * hpage_nr_pages(page), 0);       //TODO: add*/
+    bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
+	if (bio == NULL) {
+		set_page_dirty(page);
+		unlock_page(page);
+		ret = -ENOMEM;
+		return 0;
+	}
+    /*
+    bio = bio_alloc(GFP_NOIO, 1);
+	bio_set_dev(bio, sis->bdev);
+	bio->bi_iter.bi_sector = swap_page_sector(page);
+    bio->bi_end_io = end_write_func;
+    bio_add_page(bio, page, thp_size(page), 0);
+    */
     
+    bio->bi_opf = REQ_OP_WRITE | REQ_SWAP | wbc_to_write_flags(&wbc);   //REQ_OP_WRITE, REQ_SWAP
     bio_associate_blkg_from_page(bio, page);
     count_swpout_vm_event(page);
     set_page_writeback(page);
