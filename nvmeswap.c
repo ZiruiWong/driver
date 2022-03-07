@@ -34,6 +34,7 @@ int sswap_rdma_write(struct page *page, u64 roffset)
 
     struct bio *bio;
     int ret;
+    struct block_device *bdev;
     VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
     ret = 0;
@@ -41,7 +42,6 @@ int sswap_rdma_write(struct page *page, u64 roffset)
     /* get swap bio */
     bio = bio_alloc(GFP_NOIO, 1);
 
-    struct block_device *bdev;
 	bio->bi_iter.bi_sector = map_swap_page(page, &bdev);
 	bio_set_dev(bio, bdev);                                             //set bio->bi_disk, bio->bi_partno
 
